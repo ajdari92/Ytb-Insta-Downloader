@@ -1,43 +1,37 @@
-# استفاده از پایتون نسخه سبک
+# مرحله 1: استفاده از ایمیج آماده سرور تلگرام (بدون نیاز به کامپایل)
+FROM aiogram/telegram-bot-api:latest as api-server
+
+# مرحله 2: ساخت محیط پایتون
 FROM python:3.10-slim
 
-# نصب پکیج‌های سیستمی لازم برای کامپایل سرور تلگرام و اجرای yt-dlp
+# نصب ffmpeg (برای yt-dlp ضروری است) و ابزارهای پایه
 RUN apt-get update && apt-get install -y \
-    git \
-    cmake \
-    g++ \
-    make \
-    zlib1g-dev \
-    libssl-dev \
-    gperf \
     ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# دانلود و کامپایل کردن سرور لوکال تلگرام (Telegram Bot API Server)
-WORKDIR /tmp
-RUN git clone --recursive https://github.com/tdlib/telegram-bot-api.git
-WORKDIR /tmp/telegram-bot-api
-RUN rm -rf build && mkdir build && cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr/local .. && \
-    cmake --build . --target install
+# کپی کردن فایل باینری سرور تلگرام از مرحله 1 به محیط فعلی
+COPY --from=api-server /usr/bin/telegram-bot-api /usr/bin/telegram-bot-api
 
-# آماده‌سازی پوشه کاری ربات
 WORKDIR /app
 
-# کپی کردن فایل نیازمندی‌ها و نصب آن‌ها
+# نصب پکیج‌های پایتون
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# کپی کردن کل فایل‌های پروژه
+# کپی کدها
 COPY . .
 
-# ساخت اسکریپت اجرایی برای ران کردن همزمان سرور تلگرام و ربات پایتون
-# پورت 8081 پورت داخلی برای ارتباط ربات با سرور تلگرام است
+# اسکریپت شروع (همان منطق قبلی)
+# ما یک اسکریپت می‌سازیم که سرور تلگرام و ربات را با هم اجرا کند
 RUN echo '#!/bin/bash\n\
-telegram-bot-api --api-id=${TELEGRAM_API_ID} --api-hash=${TELEGRAM_API_HASH} --local --http-port=8081 --dir=/app/tg_data --temp-dir=/app/tg_temp & \n\
+# اجرای سرور تلگرام در پس‌زمینه
+telegram-bot-api --api-id=${TELEGRAM_API_ID} --api-hash=${TELEGRAM_API_HASH} --local --http-port=8081 --dir=/tmp/tg_data --temp-dir=/tmp/tg_temp & \n\
+# کمی صبر برای بالا آمدن سرور
+sleep 5 \n\
+# اجرای ربات پایتون
 python main.py' > /app/start.sh
 
 RUN chmod +x /app/start.sh
 
-# دستور شروع برنامه
 CMD ["/app/start.sh"]
